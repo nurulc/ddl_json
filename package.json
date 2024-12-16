@@ -4,6 +4,10 @@
   "main": "index.js",
   "bin": {"ddl-json": "./index.js"},
   "preferGlobal": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nurul/ddl-json.git"
+  }
   "keywords": ["ddl", "parser", "json", "database"],
   "author": "Nurul Choudhury",
   "license": "ISC",

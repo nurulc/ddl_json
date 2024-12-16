@@ -3,6 +3,17 @@
 const fs = require("fs");
 const path = require("path");
 
+// Check Node.js version
+const requiredVersion = 14;
+const currentVersion = process.versions.node.split('.').map(Number)[0];
+
+if (currentVersion < requiredVersion) {
+    console.error(
+        `Error: This script requires Node.js version ${requiredVersion} or higher. Current version: ${process.versions.node}`
+    );
+    process.exit(1);
+}
+
 function parseDDL(ddlContent) {
     const ddlLines = ddlContent.split("\n");
     const schemaRegex = /CREATE SCHEMA (\w+)/i;
