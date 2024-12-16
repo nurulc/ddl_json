@@ -1,0 +1,11 @@
+{
+  "name": "@nurulc/ddl-json",
+  "version": "0.1.0",
+  "main": "index.js",
+  "bin": {"ddl-json": "./index.js"},
+  "preferGlobal": true,
+  "keywords": ["ddl", "parser", "json", "database"],
+  "author": "Nurul Choudhury",
+  "license": "ISC",
+  "description": "Convert postgres DDL file to JSON"
+}
