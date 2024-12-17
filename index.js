@@ -2,6 +2,35 @@
 
 const fs = require("fs");
 const path = require("path");
+const objCompress = require('./compressObj');
+const debug = false;
+
+if(typeof objCompress !== 'function') throw new Error("objCompress is not a function");
+
+function X(v) { return debug?v:''; }
+function S(v) { return (v===undefined || v===null)?v:''; } // undefined and null converted to empty string
+
+const SCHEMA = 0, TABLE=1, COLUMN = 2;
+/**
+ * splits a string line schema.table.column into its parts
+ *  e.g "schema.table.column" => ['schema','table', 'column']
+ *      "table.column" => ['','table', 'column']
+ *      
+ * @param  {[type]} name [description]
+ * @return {[type]}      [description]
+ */
+function schemaTableColumn(name,expected="S.T") {
+	const sn = name.split('.');
+	const len = sn.length;
+    
+	if(len==0) return ['','',''];
+	//if(expected === 'C' && length === 1) return ['','',...sn]
+	if(expected==='S.T' && len === 1) return ['', ...sn];
+	if(expected==='S.T' && len === 2) return sn;
+	if(expected ==='T.C' && len === 1) return ['', '',...sn];
+    if(expected ==='T.C' && len === 2) return ['', ...sn];
+    return sn;
+}
 
 // Check Node.js version
 const requiredVersion = 14;
@@ -16,13 +45,14 @@ if (currentVersion < requiredVersion) {
 
 function parseDDL(ddlContent) {
     const ddlLines = ddlContent.split("\n");
-    const schemaRegex = /CREATE SCHEMA (\w+)/i;
-    const sequenceRegex = /CREATE SEQUENCE (\w+\.\w+)/i;
-    const tableRegex = /CREATE TABLE (\w+\.\w+)/i;
-    const columnRegex = /^\s+(\w+)\s+([\w\(\),\.\'\:]+)( NOT NULL)?/i;
-    const primaryKeyRegex = /CONSTRAINT \w+ PRIMARY KEY \(([\w, ]+)\)/i;
-    const indexRegex = /CREATE (UNIQUE )?INDEX (\w+) ON (\w+\.\w+)/i;
-    const commentRegex = /COMMENT ON COLUMN (\w+\.\w+\.\w+) IS '(.+)'/i;
+    const schemaRegex = /^\s*CREATE\s+SCHEMA\s+(\w+)/i;
+    const sequenceRegex = /^\s*CREATE\s+SEQUENCE\s+(\w+\.\w+)/i;
+    const tableRegex = /^\s*CREATE\s+TABLE\s+(\w+\.\w+)/i;
+    const columnRegex = /^\s*(\w+)\s+([\w\(\),\.\'\:]+)(.*?)(\s+NOT NULL|\s+NULL)?,/i;
+    const primaryKeyRegex = /^\s*CONSTRAINT\s+(\w+)\s+PRIMARY\s+KEY\s+\(([\w, ]+)\)/i;
+    const foreignKeyRegex = /^\s*CONSTRAINT\s+(\w+)\s+FOREIGN\s+KEY\s*\(([\w, ]+)\)(.*)/i;
+    const indexRegex = /^\s*CREATE\s+(UNIQUE )?INDEX\s+(\w+)\s+ON\s+(\w+\.\w+)/i;
+    const commentRegex = /^\s*COMMENT\s+ON\s+COLUMN\s+(\w+\.\w+\.\w+)\s+IS\s+'(.+)'/i;
 
     const states = {
         NONE: "NONE",
@@ -35,9 +65,13 @@ function parseDDL(ddlContent) {
     const jsonResult = [];
     const tableLookup = {}; // Lookup for tables and columns
 
-    ddlLines.forEach((line) => {
+    ddlLines.forEach((rawLine) => {
+    	const [mainPart, altComment] = rawLine.split("--").map((part) => part?.trim());
+
+        // Ignore lines with no main content
+        if (!mainPart || mainPart.trim() === "") return;
         // Strip comments and trim whitespace
-        line = line.split("--")[0].trim();
+        line = mainPart
         if (!line) return; // Ignore blank lines
 
         switch (state) {
@@ -49,27 +83,30 @@ function parseDDL(ddlContent) {
                     jsonResult.push({
                         schema: schemaName,
                         type: "sequence",
-                        name: sequenceName.split(".")[1],
+                        name: schemaTableColumn(sequenceName,'S.T')[TABLE],
+                        altComment
                     });
                 } else if (line.match(tableRegex)) {
-                    const tableName = line.match(tableRegex)[1];
+                    const fullTableName = line.match(tableRegex)[1];
+                    const name = schemaTableColumn(fullTableName,'S.T')[TABLE];
                     currentTable = {
                         schema: schemaName,
                         type: "table",
-                        name: tableName.split(".")[1],
+                        name,
                         columns: [],
                         indexes: [],
                         constraints: [],
                         comments: {},
+                        altComment
                     };
                     tableLookup[currentTable.name] = currentTable; // Add to lookup
                     state = states.TABLE;
                 } else if (line.match(commentRegex)) { // comment outside a table definition
                     const [, fullColumnName, comment] = line.match(commentRegex);
-                    const [tableSchema, tableName, columnName] = fullColumnName.split(".");
+                    const [tableSchema, tableName, columnName] = schemaTableColumn(fullColumnName,'S.T.C');
                     const table = tableLookup[tableName];
                     if (table) {
-                        table.comments[columnName] = comment;
+                        table.comments[columnName] = comment.trim();
                     } else {
                         console.warn(`Warning: Comment references unknown table '${tableName}'`);
                     }
@@ -77,18 +114,28 @@ function parseDDL(ddlContent) {
                 break;
 
             case states.TABLE:
-                if (line.match(columnRegex)) {
-                    const [_, name, type, notNull] = line.match(columnRegex);
-                    currentTable.columns.push({
-                        name,
-                        type: type.replace(/,$/, ""), // Remove trailing comma
-                        constraints: notNull ? ["NOT NULL"] : [],
-                    });
-                } else if (line.match(primaryKeyRegex)) {
-                    const columns = line.match(primaryKeyRegex)[1].split(",").map((col) => col.trim());
+            	console.warn('IN TABLE', currentTable.name, line, 
+            		     'primaryKey:', !!line.match(primaryKeyRegex),X(primaryKeyRegex),
+            		      'indexKey:', !!line.match(indexRegex),X(indexRegex),
+            		      'columnRegex:', !!line.match(columnRegex),X(columnRegex),
+            		      );
+                if (line.match(primaryKeyRegex)) {
+                	const pk = line.match(primaryKeyRegex);
+                    const columns = pk[2].split(",").map((col) => col.trim());
                     currentTable.constraints.push({
                         type: "primary_key",
+                        index_name: pk[1],
                         columns,
+                    });
+                } else if (line.match(foreignKeyRegex)) {
+                	const fk = line.match(foreignKeyRegex);
+                    const columns = fk[2].split(",").map((col) => col.trim());
+                    const rule = fk[3];
+                    currentTable.constraints.push({
+                        type: "foreign_key",
+                        index_name: fk[1],
+                        columns,
+                        rule
                     });
                 } else if (line.match(indexRegex)) {
                     const [, unique, indexName] = line.match(indexRegex);
@@ -99,19 +146,30 @@ function parseDDL(ddlContent) {
                     });
                 } else if (line.match(commentRegex)) {
                     const [, fullColumnName, comment] = line.match(commentRegex);
-                    const [tableSchema, tableName, columnName] = fullColumnName.split(".");
+                    const [tableSchema, tableName, columnName] = schemaTableColumn(fullColumnName,'S.T.C');
                     const table = tableLookup[tableName];
                     if (table) {
                         table.comments[columnName] = comment;
                     } else {
                         console.warn(`Warning: Comment references unknown table '${tableName}'`);
                     }
-                } else if (line.startsWith(");")) {
+                } else if (line.trim().startsWith(");")) {
                     // End of table definition
                     jsonResult.push(currentTable);
                     currentTable = null;
                     state = states.NONE;
-                }
+                } else if (line.match(columnRegex)) {
+                    const [_, name, type,_dflt,notNull] = line.match(columnRegex);
+                    const isNotNull = !!(notNull || _dflt || '').trim().match(/NOT\s+NULL/);
+                    const defaultVal = (!isNotNull? (_dflt||'').replace('DEFAULT','').trim():undefined)
+                    currentTable.columns.push({
+                        name,
+                        type: type.replace(/,$/, ""), // Remove trailing comma
+                        constraints: isNotNull ? ["NOT NULL"] : [],
+                        defaultVal,
+                        altComment
+                    });
+                } 
                 break;
 
             default:
@@ -119,7 +177,7 @@ function parseDDL(ddlContent) {
         }
     });
 
-    return jsonResult;
+    return objCompress(jsonResult);
 }
 
 function readDDLFile(filePath) {
