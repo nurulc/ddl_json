@@ -11,26 +11,50 @@ function X(v) { return debug?v:''; }
 function S(v) { return (v===undefined || v===null)?v:''; } // undefined and null converted to empty string
 
 const SCHEMA = 0, TABLE=1, COLUMN = 2;
+
 /**
- * splits a string line schema.table.column into its parts
- *  e.g "schema.table.column" => ['schema','table', 'column']
- *      "table.column" => ['','table', 'column']
- *      
- * @param  {[type]} name [description]
- * @return {[type]}      [description]
+ * Parses a database object name into schema, table, and column components.
+ * The function supports different expected formats:
+ * - "S.T": Schema and Table
+ * - "T.C": Table and Column
+ * 
+ * @param {string} name - The fully qualified name to parse (e.g., "schema.table", "table.column").
+ * @param {string} [expected="S.T"] - The expected format of the name.
+ *   - "S.T": Expects the input to represent Schema and Table.
+ *   - "T.C": Expects the input to represent Table and Column.
+ * @returns {string[]} An array of three strings representing the schema, table, and column.
+ *   - If the schema is not provided, the first element will be an empty string.
+ *   - If the table or column is not provided, their positions in the array will also be empty strings.
+ * 
+ * @example
+ * // Parse Schema and Table
+ * schemaTableColumn("public.users", "S.T"); // Returns ["public", "users", ""]
+ * schemaTableColumn("users", "S.T");       // Returns ["", "users", ""]
+ * 
+ * // Parse Table and Column
+ * schemaTableColumn("users.id", "T.C");    // Returns ["", "users", "id"]
+ * schemaTableColumn("id", "T.C");          // Returns ["", "", "id"]
+ * 
+ * // Handle fully qualified names
+ * schemaTableColumn("public.users.id", "T.C"); // Returns ["public", "users", "id"]
  */
-function schemaTableColumn(name,expected="S.T") {
+function schemaTableColumn(name, expected = "S.T") {
 	const sn = name.split('.');
 	const len = sn.length;
-    
-	if(len==0) return ['','',''];
-	//if(expected === 'C' && length === 1) return ['','',...sn]
-	if(expected==='S.T' && len === 1) return ['', ...sn];
-	if(expected==='S.T' && len === 2) return sn;
-	if(expected ==='T.C' && len === 1) return ['', '',...sn];
-    if(expected ==='T.C' && len === 2) return ['', ...sn];
-    return sn;
+
+	if (len === 0) return ['', '', ''];
+	// If expecting "Schema.Table" and the input has one component, treat it as table
+	if (expected === 'S.T' && len === 1) return ['', ...sn];
+	// If expecting "Schema.Table" and the input has two components, return them
+	if (expected === 'S.T' && len === 2) return sn;
+	// If expecting "Table.Column" and the input has one component, treat it as column
+	if (expected === 'T.C' && len === 1) return ['', '', ...sn];
+	// If expecting "Table.Column" and the input has two components, treat the first as table and the second as column
+	if (expected === 'T.C' && len === 2) return ['', ...sn];
+	// For inputs with three components, return as-is (e.g., "schema.table.column")
+	return sn;
 }
+
 
 // Check Node.js version
 const requiredVersion = 14;
@@ -114,11 +138,11 @@ function parseDDL(ddlContent) {
                 break;
 
             case states.TABLE:
-            	console.warn('IN TABLE', currentTable.name, line, 
-            		     'primaryKey:', !!line.match(primaryKeyRegex),X(primaryKeyRegex),
-            		      'indexKey:', !!line.match(indexRegex),X(indexRegex),
-            		      'columnRegex:', !!line.match(columnRegex),X(columnRegex),
-            		      );
+            	// console.warn('IN TABLE', currentTable.name, line, 
+            	// 	     'primaryKey:', !!line.match(primaryKeyRegex),X(primaryKeyRegex),
+            	// 	      'indexKey:', !!line.match(indexRegex),X(indexRegex),
+            	// 	      'columnRegex:', !!line.match(columnRegex),X(columnRegex),
+            	// 	      );
                 if (line.match(primaryKeyRegex)) {
                 	const pk = line.match(primaryKeyRegex);
                     const columns = pk[2].split(",").map((col) => col.trim());
