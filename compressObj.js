@@ -1,3 +1,41 @@
+
+
+
+/**
+ * Recursively compresses objects and arrays by removing falsey values.
+ * Falsey values are defined as: "", null, undefined, [], and {}.
+ * 
+ * - For arrays: Removes falsey elements. Returns `undefined` if the array becomes empty.
+ * - For objects: Removes key-value pairs where the value is falsey.
+ *   If all keys are removed, the object becomes `undefined`.
+ * - The function is pure: it does not modify the input directly.
+ * 
+ * @param {any} input - The input value to compress. Can be an object, array, or primitive.
+ * @returns {any} - Returns the compressed version of the input:
+ *   - If no changes are made, the input is returned as is.
+ *   - If all elements/keys are removed, returns `undefined`.
+ *   - Otherwise, returns the compressed object or array.
+ * 
+ * @example
+ * const data = {
+ *     a: "",
+ *     b: null,
+ *     c: [0, "", null, { d: undefined, e: "value", f: {} }, []],
+ *     g: { h: {}, i: { j: null, k: [0, 2, {}, false] } },
+ *     l: [false, {}, 0],
+ *     m: [],
+ *     n: undefined
+ * };
+ * 
+ * const result = compressObj(data);
+ * console.log(result);
+ * // Output:
+ * // {
+ * //   c: [0, { e: "value" }],
+ * //   g: { i: { k: [0, 2, false] } },
+ * //   l: [false, 0]
+ * // }
+ */
 function compressObj(input) {
     // If input is an array
     if (Array.isArray(input)) {
@@ -65,9 +103,7 @@ function compressObj(input) {
     return input;
 }
 
-console.warn(typeof compressObj);
-if(typeof compressObj !== 'function') throw new Error("compressObj is not a function");
-console.warn("---------------- compressObj loaded ---------------------")
+
 module.exports = compressObj;
 
 /*
